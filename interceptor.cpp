@@ -17,7 +17,7 @@ typedef void** (*cudaRegisterFatBinary_t)(void*);
 
 static std::mutex g_mutex;
 
-// --- FatBinary Structures (Simplied) ---
+// --- FatBinary Structures (Simplified) ---
 struct __fatBinC_Header {
     uint32_t magic;
     uint16_t version;
@@ -43,13 +43,23 @@ extern "C" void** __cudaRegisterFatBinary(void* fatb) {
 size_t get_elf_size(const void* data) {
     const Elf64_Ehdr* ehdr = (const Elf64_Ehdr*)data;
     if (memcmp(ehdr->e_ident, ELFMAG, SELFMAG) != 0) return 0;
-    size_t sh_end = ehdr->e_shoff + (ehdr->e_shentsize * ehdr->e_shnum);
-    size_t ph_end = ehdr->e_phoff + (ehdr->e_phentsize * ehdr->e_phnum);
-    return ((sh_end > ph_end) ? sh_end : ph_end) + 8192;
+    const uint8_t* base = (const uint8_t*)data;
+    size_t max_end = ehdr->e_shoff + (size_t)ehdr->e_shentsize * ehdr->e_shnum;
+    size_t ph_end = ehdr->e_phoff + (size_t)ehdr->e_phentsize * ehdr->e_phnum;
+    if (ph_end > max_end) max_end = ph_end;
+    for (int i = 0; i < ehdr->e_shnum; i++) {
+        const Elf64_Shdr* shdr = (const Elf64_Shdr*)(base + ehdr->e_shoff + (size_t)i * ehdr->e_shentsize);
+        if (shdr->sh_type != SHT_NOBITS) {
+            size_t sec_end = shdr->sh_offset + shdr->sh_size;
+            if (sec_end > max_end) max_end = sec_end;
+        }
+    }
+    return max_end;
 }
 
 // Internal helper to run the rewriter on a memory buffer
 CUresult patch_and_load(cuModuleLoadDataEx_t original_func, CUmodule* module, const void* image, unsigned int numOptions, CUjit_option* options, void** optionValues) {
+    std::lock_guard<std::mutex> lock(g_mutex);
     size_t size = get_elf_size(image);
     if (size == 0) return original_func(module, image, numOptions, options, optionValues);
 
@@ -59,8 +69,13 @@ CUresult patch_and_load(cuModuleLoadDataEx_t original_func, CUmodule* module, co
     int fd_out = mkstemps(tmp_out, 6);
     close(fd_out);
 
-    write(fd_in, image, size);
+    ssize_t written = write(fd_in, image, size);
     close(fd_in);
+    if (written < 0 || (size_t)written != size) {
+        unlink(tmp_in);
+        unlink(tmp_out);
+        return original_func(module, image, numOptions, options, optionValues);
+    }
 
     std::string cmd = "python3 rewriter.py " + std::string(tmp_in) + " " + std::string(tmp_out);
     int status = system(cmd.c_str());
