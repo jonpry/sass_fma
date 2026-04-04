@@ -1,0 +1,35 @@
+# Compiled Binaries and Libraries
+*.so
+test_kernel
+discovery_kernel
+comprehensive_test
+stress_test
+runtime_test
+
+# CUDA Artifacts
+*.cubin
+*.sass
+*.fatbin
+*.ptx
+
+# Python Artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+.env
+
+# Temporary Files
+/tmp/orig_*.cubin
+/tmp/patched_*.cubin
+orig.cubin
+patched.cubin
+
+# IDE and System Files
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
