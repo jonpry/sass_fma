@@ -137,7 +137,13 @@ class SassRewriter:
 
     def patch_and_rebuild(self):
         with open(self.input_path, 'rb') as f: data = bytearray(f.read())
-        e_phoff, e_shoff, e_phnum, e_shnum = struct.unpack_from('<QQHH', data, 32)[0:4]
+        if data[:4] != b'\x7fELF':
+            print(f"Error: {self.input_path} is not a valid ELF file.")
+            sys.exit(1)
+
+        e_phoff, e_shoff = struct.unpack_from('<QQ', data, 32)[0:2]
+        e_phnum = struct.unpack_from('<H', data, 56)[0]
+        e_shnum = struct.unpack_from('<H', data, 60)[0]
         sh_idx = struct.unpack_from('<H', data, 62)[0]
         
         for sn, instrs in self.sections.items():
@@ -151,10 +157,15 @@ class SassRewriter:
 
         cur_data, cum_growth = data, 0
         sh_table = [list(struct.unpack_from('<IIQQQQIIQQ', data, e_shoff + (i*64))) for i in range(e_shnum)]
+        ph_table = [list(struct.unpack_from('<IIQQQQQQ', data, e_phoff + (i*56))) for i in range(e_phnum)]
         str_tab_off = sh_table[sh_idx][4]
 
+        def get_name(idx):
+            end = data.find(b'\x00', str_tab_off + idx)
+            return data[str_tab_off + idx : end].decode('utf-8')
+
         for i in range(e_shnum):
-            name = "".join(chr(data[str_tab_off + sh_table[i][0] + k]) for k in range(64) if data[str_tab_off + sh_table[i][0] + k] != 0)
+            name = get_name(sh_table[i][0])
             if name in self.sections:
                 old_off, old_size = sh_table[i][4], sh_table[i][5]
                 new_sec = bytearray()
@@ -163,14 +174,23 @@ class SassRewriter:
                 actual_off = old_off + cum_growth
                 cur_data = cur_data[:actual_off] + new_sec + cur_data[actual_off + old_size:]
                 sh_table[i][5] = len(new_sec)
+                
                 for j in range(e_shnum):
                     if sh_table[j][4] > old_off: sh_table[j][4] += growth
+                
+                for j in range(e_phnum):
+                    if ph_table[j][2] <= old_off and (ph_table[j][2] + ph_table[j][5]) > old_off:
+                        ph_table[j][5] += growth # p_filesz
+                        ph_table[j][6] += growth # p_memsz
+                    elif ph_table[j][2] > old_off:
+                        ph_table[j][2] += growth # p_offset
+
                 if e_phoff > old_off: e_phoff += growth
                 if e_shoff > old_off: e_shoff += growth
                 cum_growth += growth
 
         for i in range(e_shnum):
-            name = "".join(chr(data[str_tab_off + sh_table[i][0] + k]) for k in range(64) if data[str_tab_off + sh_table[i][0] + k] != 0)
+            name = get_name(sh_table[i][0])
             o, s = sh_table[i][4], sh_table[i][5]
             target_k = name.replace(".nv.info.", ".text.") if ".nv.info." in name else None
             if ".nv.info" in name or ".nv.constant" in name:
@@ -188,19 +208,22 @@ class SassRewriter:
                 cur_data[o:o+s] = content
 
         for i in range(e_shnum):
-            if sh_table[i][1] == 11:
+            if sh_table[i][1] in [2, 11]: # SHT_SYMTAB, SHT_DYNSYM
                 o, s, entsize = sh_table[i][4], sh_table[i][5], sh_table[i][9]
                 content = bytearray(cur_data[o:o+s])
                 for j in range(0, len(content), entsize):
-                    if (content[j+4] & 0xf) == 2:
-                        tx_idx = struct.unpack_from('<H', content, j+6)[0]
-                        if tx_idx < e_shnum: struct.pack_into('<Q', content, j+16, sh_table[tx_idx][5])
+                    st_shndx = struct.unpack_from('<H', content, j+6)[0]
+                    if st_shndx < e_shnum:
+                        struct.pack_into('<Q', content, j+16, sh_table[st_shndx][5])
                 cur_data[o:o+s] = content
 
         struct.pack_into('<QQ', cur_data, 32, e_phoff, e_shoff)
         for i in range(e_shnum): struct.pack_into('<IIQQQQIIQQ', cur_data, e_shoff + (i*64), *sh_table[i])
+        for i in range(e_phnum): struct.pack_into('<IIQQQQQQ', cur_data, e_phoff + (i*56), *ph_table[i])
         with open(self.output_path, 'wb') as f: f.write(cur_data)
         print(f"[Rewriter] Unified sm_70/80 Patch Complete. Arch: {self.arch}")
+
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 3: sys.exit(1)
