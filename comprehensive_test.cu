@@ -52,6 +52,10 @@ int main() {
 
     // Load the cubin (Interceptor will hook this)
     std::ifstream ifs("comprehensive.cubin", std::ios::binary | std::ios::ate);
+    if (!ifs.is_open()) {
+        std::cerr << "Error: comprehensive.cubin not found. Run ./build.sh first." << std::endl;
+        return 1;
+    }
     std::streamsize size = ifs.tellg();
     ifs.seekg(0, std::ios::beg);
     std::vector<char> buffer(size);

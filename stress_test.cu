@@ -60,6 +60,10 @@ int main() {
     CHECK_CUDA(cuCtxCreate(&ctx, 0, dev));
 
     std::ifstream ifs("stress.cubin", std::ios::binary | std::ios::ate);
+    if (!ifs.is_open()) {
+        std::cerr << "Error: stress.cubin not found. Run ./build.sh first." << std::endl;
+        return 1;
+    }
     std::streamsize size = ifs.tellg();
     ifs.seekg(0, std::ios::beg);
     std::vector<char> buffer(size);
