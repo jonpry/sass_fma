@@ -17,7 +17,6 @@
 
 int main() {
     int n = 1024;
-    size_t size = n * sizeof(float);
 
     // 1. Initialize Driver API
     CHECK_CUDA(cuInit(0));
@@ -46,13 +45,13 @@ int main() {
     CHECK_CUDA(cuModuleGetFunction(&function, module, "_Z16discovery_kernelPfS_S_S_"));
 
     // 3. Setup Data
-    std::vector<float> h_a(1, 2.0f), h_b(1, 3.0f), h_c(1, 4.0f), h_d(1, 0.0f);
+    std::vector<float> h_a(1, 2.0f), h_b(1, 3.0f), h_c(1, 4.0f), h_d(9, 0.0f);
     CUdeviceptr d_a, d_b, d_c, d_d;
 
     CHECK_CUDA(cuMemAlloc(&d_a, sizeof(float)));
     CHECK_CUDA(cuMemAlloc(&d_b, sizeof(float)));
     CHECK_CUDA(cuMemAlloc(&d_c, sizeof(float)));
-    CHECK_CUDA(cuMemAlloc(&d_d, sizeof(float)));
+    CHECK_CUDA(cuMemAlloc(&d_d, 9 * sizeof(float)));
 
     CHECK_CUDA(cuMemcpyHtoD(d_a, h_a.data(), sizeof(float)));
     CHECK_CUDA(cuMemcpyHtoD(d_b, h_b.data(), sizeof(float)));
@@ -63,9 +62,9 @@ int main() {
     CHECK_CUDA(cuLaunchKernel(function, 1, 1, 1, 1, 1, 1, 0, NULL, args, NULL));
     CHECK_CUDA(cuCtxSynchronize());
 
-    CHECK_CUDA(cuMemcpyDtoH(h_d.data(), d_d, sizeof(float)));
-
-    std::cout << "Result: " << (h_d[0] == 10.0f ? "SUCCESS" : "FAILURE") << " (Got " << h_d[0] << ")" << std::endl;
+    // 5. Verify
+    CHECK_CUDA(cuMemcpyDtoH(h_d.data(), d_d, 9 * sizeof(float)));
+    std::cout << "Result: " << (h_d[6] == 10.0f ? "SUCCESS" : "FAILURE") << " (Got " << h_d[6] << ")" << std::endl;
 
     return 0;
 }

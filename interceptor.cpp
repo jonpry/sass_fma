@@ -65,6 +65,13 @@ CUresult patch_and_load(cuModuleLoadDataEx_t original_func, CUmodule* module, co
     std::string cmd = "python3 rewriter.py " + std::string(tmp_in) + " " + std::string(tmp_out);
     int status = system(cmd.c_str());
     
+    char* dump_dir = getenv("SASS_FMA_DUMP_DIR");
+    if (dump_dir) {
+        std::string dump_cmd = "mkdir -p " + std::string(dump_dir) + " && cp " + std::string(tmp_out) + " " + std::string(dump_dir) + "/patched_" + std::to_string(getpid()) + "_" + std::string(tmp_out + 13);
+        system(dump_cmd.c_str());
+        std::cerr << "[Hook] Dumped patched cubin to " << dump_dir << std::endl;
+    }
+
     CUresult result;
     if (status == 0) {
         std::ifstream ifs(tmp_out, std::ios::binary | std::ios::ate);
