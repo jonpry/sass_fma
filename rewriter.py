@@ -95,7 +95,7 @@ class SassRewriter:
             new_instrs = []
             for ins in instrs:
                 self.pc_map[(sn, ins['pc'])] = len(new_instrs) * 16
-                if "FMA" in ins['op'] and self.arch == "sm_70":
+                if "FMA" in ins['op'] and self.arch in ["sm_70", "sm_80"]:
                     self.num_replaced += 1
                     rd, ra = (ins['h1'] >> 16) & 0xFF, (ins['h1'] >> 24) & 0xFF
                     h1_pred = ins['h1'] & 0xF000
